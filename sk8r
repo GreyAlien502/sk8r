@@ -1,0 +1,273 @@
+#! /usr/bin/env node
+'use strict';
+
+const io = require('socket.io-client');
+const readline = require('readline');
+const hue_server_address = 'https://hue.merkoba.com';
+const fs = require('fs');
+
+
+
+const config_dir = require('os').homedir()+'/.sk8r/';
+
+
+/* INIT */
+
+// Start the connection process
+let options = get_options();
+if( options.help ){
+	console.info(trim(`
+		USAGE: sk8r [options | --help]
+			--help show this help
+			--verbose show debugging information
+			--email=EMAIL
+				EMAIL is to connect to Hue.
+				The default is thioslip@trashmail.ws.
+			--password=PASSWORD
+				PASSWORD is used to connect to Hue.
+				The default is "guest".
+			--room=ROOM_ID
+				The user will be logged into the room on Hue with id ROOM_ID.
+				The default is "main".
+			--config=FILE
+				Options are read from FILE, which must be a JSON file.
+				All options except 'config' itself can be set from FILE.
+				Command line arguments overwrite options specified in FILE.
+				The default value is ~/.sk8r/config.json.
+			--tv=FILE
+				New TV urls are written to FILE.
+			--img=FILE
+				New image urls are written to FILE.
+	`));
+	process.exit(0);
+}
+
+let debug = options.verbose?
+	x=>{ console.log(x); return x }:
+	x=>x;
+let input = start_commandline();
+let hue_interface = start_hue(options);
+
+hue_interface.set_handler(
+	console.log,
+	write_to_file(options.tv),
+	write_to_file(options.img),
+);
+input.set_handler(hue_interface.say);
+
+
+/* CONFIGURATION */
+
+function get_options() {
+	let defaults = {
+		'config': config_dir+'/config.json',
+		'email': 'thioslip@trashmail.ws',
+		'password': 'guest',
+		'room': 'main',
+		'img': '/dev/null',
+		'tv': '/dev/null',
+	};
+	let command_line_options = require('minimist')(process.argv.slice(2));
+	let options = {
+		...defaults,
+		...JSON.parse(fs.readFileSync(({...defaults,...command_line_options})['config'], 'utf8')),
+		...command_line_options,
+	}
+	return options;
+}
+
+// INPUT
+function start_commandline() {
+	let input = readline.createInterface({
+		input: process.stdin,
+		output: null,
+		terminal: false,
+	});
+	input.on('close',e=>process.exit(0));
+	return {
+		'set_topic': topic =>
+			process.stdout.write("\u001b]0;" + topic + "\u0007"),
+		'set_handler': handle => {
+			input.on(
+				'line',
+				message => handle(`${message}`)
+			);
+		}
+	};
+}
+
+// OUTPUT
+function write_to_file(file){
+	return line => fs.appendFile(
+		file,
+		line+'\n',
+		x=>x?console.warn(x):undefined
+	);
+}
+
+
+
+/* HUE PART */
+
+// Starts the Hue socket and configures it
+function start_hue(config) {
+	let hue_socket = io.connect(
+		hue_server_address, 
+		{ reconnection: false }
+	);
+
+	// Centralized function to send emits to the Hue server
+	function hue_socket_emit(method, data) {
+		data.server_method_name = method;
+		hue_socket.emit('server_method', data);
+	}
+	// Removes unwanted formatting from Hue chat messages
+	function hue_clean_chat_message(message) {
+		return message.replace(/\=?\[dummy\-space\]\=?/gm, '');
+	}
+	return {
+		'say': message => {
+			let commands = {
+				undefined: ['sendchat', x=>({message:x})],
+				'img': ['change_image_source', x=>({src:x})],
+				'tv':  ['change_tv_source', x=>({src:x})],
+			};
+
+			if(message==''){return;}
+
+			var _;
+			let command, data;
+			[_,_,command,data] = message.match(/^(\/(\S*))? ?(.*)/);
+
+			let [message_type,data_formatter] =
+				commands.hasOwnProperty(command)?
+				commands[command]:
+				[command,JSON.parse];
+			
+			try{
+				hue_socket_emit(...debug([message_type, data_formatter(data)]));
+			}catch(e){
+				console.error(e);
+			}
+		},
+		'set_handler': (txt,tv=()=>{},img=()=>{}) => {
+			// Object with all the supported Hue event handlers
+			// Each function receives a data object
+			let handle = obj=>{
+				let hue_socket_events = {
+					chat_message: data => {
+						if(data.username !== config.username) {
+							let link_title = data.link_title ? ` (${data.link_title})` : '';
+							let message = hue_clean_chat_message(data.message);
+							let edited = data.just_edited ? ` (edited)` : '';
+							txt(`${new Date().toISOString().replace(/[A-Z]/g,' ')}${data.username}: ${message + link_title + edited}`);
+						}
+					},
+					changed_image_source: data => {
+						let source = (data.source.startsWith('/')?'https://hue.merkoba.com':'')+data.source;
+						img(source);
+						txt( `${data.setter} changed the image to ${source}.`);
+							
+						if(data.comment) {
+							txt(`${data.setter}: ${data.comment}`);
+						}
+					},
+					changed_tv_source: data => {
+						let title = data.title ? ` (${data.title})` : '';
+						tv(data.source);
+						txt(`${data.setter} changed the TV to ${title} (${data.source}).`)
+							
+						if(data.comment) {
+							txt(`${data.setter}: ${data.comment}`);
+						}
+					},
+					changed_radio_source: data => {
+						let title = data.title ? ` (${data.title})` : '';
+						txt( `${data.setter} tuned the Radio to: ${data.source + title}`);
+							
+						if(data.comment) {
+							txt(`${data.setter}: ${data.comment}`);
+						}
+					},
+					topic_change: data =>
+						txt(`The topic is now "${data.topic}".`),
+
+					user_join: data => {
+						if(config.show_joins) {
+							txt( `${data.username} joined.`);
+						}
+					},
+					user_disconnect: data => {
+						if(config.show_parts) {
+							txt(`${data.username} left.`);
+						}
+					},
+					joined: data=>{
+						data.log_messages.forEach(handle);
+						console.log(data.userlist.map(x=>x.username));
+					},
+					activity_trigger: e=>e,
+					typing: e=>e,
+				};
+				let action = hue_socket_events[debug(obj).type];
+				if(action){
+					action(obj.data);
+				}else{
+					console.log(obj);
+				}
+			}
+				
+
+			hue_socket.on(
+				'connect',
+				()=> {
+					hue_socket_emit(
+						'join_room',
+						{
+							alternative: true,
+							room_id: config.room,
+							email: config.email,
+							password: config.password
+						}
+					);
+					console.info(`I've connected you to ${config.room} as ${config.email}.`);
+				}
+			);
+
+			hue_socket.on(
+				'update',
+				handle
+			);
+
+			hue_socket.on(
+				'disconnect',
+				()=> {
+					console.warn(
+						"We've been disconnected!\n" +
+						"I'll try reconnecting..."
+					);
+					setTimeout(
+						()=> debug(hue_socket.connect()),
+						0
+					);
+				}
+			);
+		}
+	};
+}
+
+function trim(multiline_string){
+	/*\
+	|*| This function will trim a multiline string
+	|*| to make it look pleasant in other machines.
+	|*| The first line, which must be empty, is removed.
+	|*| For every other line, extra tabs at the beginning are removed
+	|*| so that the first line doesn't start with a tab.
+	|*| As such, each line must start with at least as many tabs as the second.
+	\*/
+	let lines = multiline_string.match(/^\n([\s\S]*)\n\t*/m)[1].split('\n');
+	let indents = lines[0].match(/^\t*/)[0].length;
+	return lines
+		.map( line=>line.match(new RegExp(`^\t{${indents}}(.*)`))[1] )
+		.join('\n');
+}
