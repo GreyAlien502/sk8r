@@ -208,6 +208,7 @@ function start_hue(config) {
 					},
 					activity_trigger: e=>e,
 					typing: e=>e,
+					announcement: e=>e,
 				};
 				let action = hue_socket_events[debug(obj).type];
 				if(action){
