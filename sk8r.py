@@ -233,7 +233,7 @@ for line in sys.stdin:
 	command,_,data = re.search(r'^(/\S*|)(\s*)(.*)',line).groups()
 
 	message_type,data_formatter = collections.defaultdict(
-		lambda:( command, json.dumps ),
+		lambda:( command[1:], json.loads ),
 		{
 			'' :( 'sendchat', lambda x: {'message':x} ),
 			'/img' :( 'change_image_source', lambda x:{'src':x} ),
