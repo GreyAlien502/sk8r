@@ -135,7 +135,7 @@ def handle(event,old=False):
 				message
 			}'''
 		)
-	collections.defaultdict( lambda:print, dict(
+	collections.defaultdict( lambda:lambda x:print(event['type'],x), dict(
 		chat_message=lambda data:
 			print_action(
 				data.date,
@@ -190,6 +190,7 @@ def handle(event,old=False):
 		activity_trigger=lambda x:...,
 		typing=lambda x:...,
 		announcement=lambda x:...,
+		announce_radio=lambda x:...,
 	) )[
 		debug(event['type'])
 	](
