@@ -155,8 +155,8 @@ def handle(event,old=False):
 				+ data.source
 			),
 			img(source) if not old else...,
-			print_action(data.date, data.setter,  f'''changed the image to { source }.'''),
-			print_action(data.date, data.setter, ': '+data.comment) if data.comment else...,
+			print_action(data.date, data.username,  f'''changed the image to { source }.'''),
+			print_action(data.date, data.username, ': '+data.comment) if data.comment else...,
 		),
 		tv_source_changed=lambda data:(
 			source := (
@@ -164,8 +164,8 @@ def handle(event,old=False):
 				+ data.source
 			),
 			tv(source) if not old else...,
-			print_action(data.date, data.setter,  f'''changed the TV to { source }.'''),
-			print_action(data.date, data.setter, ': '+data.comment) if data.comment else...,
+			print_action(data.date, data.username,  f'''changed the TV to { source }.'''),
+			print_action(data.date, data.username, ': '+data.comment) if data.comment else...,
 		),
 		topic_change=lambda data:
 			print(f'''The topic is now "{data.topic}".''')
