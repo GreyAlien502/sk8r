@@ -86,11 +86,11 @@ function start_commandline() {
 	input.on('close',e=>process.exit(0));
 	return {
 		'set_topic': topic =>
-			process.stdout.write("\u001b]0;" + topic + "\u0007"),
+			process.stdout.write("\u001b]0;" + topic + "\u0007\n"),
 		'set_handler': handle => {
 			input.on(
 				'line',
-				message => handle(`${message}`)
+				message => handle(`${message}\n`)
 			);
 		}
 	};
@@ -113,7 +113,7 @@ function write_to_file(file){
 function start_hue(config) {
 	let hue_socket = io.connect(
 		hue_server_address, 
-		{ reconnection: false }
+		{ reconnection: true }
 	);
 
 	// Centralized function to send emits to the Hue server
