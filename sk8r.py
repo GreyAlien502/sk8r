@@ -114,10 +114,8 @@ def hue_clean_chat_message(message): #TODO
 
 def normalize_past_event(event):
 	e = Namespace(event)
-	e.data['date'] = e.date
 	if e.type == 'chat':
 		e.type = 'chat_message'
-		e.data['message'] = e.data['content']
 	if e.type == 'image':
 		e.type = 'image_source_changed'
 	if e.type == 'tv':
